@@ -65,10 +65,11 @@ export function parseSnapshot(text: string): Snapshot {
 }
 
 function median(sorted: number[]): number {
-  const n = sorted.length;
-  if (n === 0) return 0;
-  const mid = Math.floor(n / 2);
-  return n % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  // The upper median: for an even count, the higher of the two middle
+  // ratios. A calibration anchor should sit inside the observed range,
+  // never in a gap no live token actually trades at.
+  if (sorted.length === 0) return 0;
+  return sorted[Math.floor(sorted.length / 2)]!;
 }
 
 function quantile(sorted: number[], q: number): number {
@@ -180,7 +181,7 @@ export function isRankable(p: Protocol): boolean {
   if (!isPreToken(p)) return false;
   if (p.category !== null && EXCLUDED_CATEGORIES.has(p.category)) return false;
   if (/\b(wrapped|staked|staking)\b/i.test(p.name)) return false;
-  if (/\s(V2|v2|2\.0|V3|v3)$/.test(p.name)) return false;
+  if (/\s(V\d+|v\d+|\d+\.0)$/.test(p.name)) return false;
   if (EXCHANGE_PREFIXES.some((x) => p.name.startsWith(x))) return false;
   return true;
 }
