@@ -158,8 +158,8 @@
   function liveHTML() {
     var body = R.live.map(function (r) {
       return '<tr><td><span class="pname">' + esc(r.name) + '</span><div class="pcat">' + esc(r.category || 'no category') + '</div></td>' +
-        '<td class="num">' + moneyShort(r.tvl) + '</td><td class="num">' + moneyShort(r.mcap) + '</td>' +
-        '<td class="num">' + r.ratio.toFixed(3) + '\u00D7</td>' +
+        '<td class="num">' + moneyShort(r.tvl) + '</td><td class="num">' + (r.mcap < 0 ? 'not priced' : moneyShort(r.mcap)) + '</td>' +
+        '<td class="num">' + (r.mcap < 0 ? '\u2014' : r.ratio.toFixed(3) + '\u00D7') + '</td>' +
         '<td class="num ' + (r.change7d == null ? '' : r.change7d >= 0 ? 'pos' : 'neg') + '">' + pct(r.change7d) + '</td></tr>';
     }).join('');
     return '<section><h2>Live tokens \u2014 set aside, not ranked</h2>' +
