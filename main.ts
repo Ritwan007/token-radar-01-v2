@@ -14,7 +14,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { boardIssue, buildRadar, dataScript, parseSnapshot } from './lib/model.ts';
+import { boardIssue, buildRadar, calibrate, dataScript, parseSnapshot } from './lib/model.ts';
 import { buildDossier } from './vendor/makefun-board.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -82,6 +82,20 @@ for (const name of shots) {
 
 // The dossier is written last: the scorer rebuilds it from this /output and compares bytes.
 writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEXT_MAX_BYTES, screenshots: SCREENSHOT_CAPS, dashboard: { max_files: 400, max_bytes: 4_194_304 } }));
+
+// --verify prints the calibration the model computed from the snapshot and
+// the board's head, for a human to eyeball before the entry is handed in.
+// It changes nothing the grader reads: the default run writes the same bytes.
+if (process.argv.includes('--verify')) {
+  const { globalMedian, table } = calibrate(snapshot);
+  process.stdout.write(`token radar: global median mcap/TVL ${globalMedian.toFixed(4)} across the live-token set\n`);
+  for (const m of table) {
+    process.stdout.write(`token radar: ${m.category}: median ${m.median_ratio} (p25 ${m.p25_ratio}, p75 ${m.p75_ratio}, n=${m.live_count}, ${m.reliability}) -> multiple ${m.multiple}x\n`);
+  }
+  for (const row of board.slice(0, 10)) {
+    process.stdout.write(`token radar: #${row.rank} ${row.slug} $${row.implied_value_usd} (${row.category ?? 'no category'}, TVL $${row.tvl_usd})\n`);
+  }
+}
 
 process.stdout.write(
   `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.stats.early} early, ${radar.stats.live} live set aside)\n` +

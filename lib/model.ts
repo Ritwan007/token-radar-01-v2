@@ -194,6 +194,29 @@ function capitalTier(tvl: number): number {
   return 50;
 }
 
+/**
+ * Planning estimate of one small transaction's gas on a chain, in dollars.
+ * A stated assumption of the farm plans, printed in the model panel — the
+ * snapshot carries no gas data, so the plans say what they assume.
+ */
+const GAS_BY_CHAIN: Record<string, number> = {
+  Ethereum: 12, Arbitrum: 0.4, Base: 0.3, Optimism: 0.4, 'BNB Chain': 0.6,
+  Polygon: 0.2, Avalanche: 0.8, Solana: 0.15, 'zkSync Era': 0.5, Linea: 0.5,
+  Scroll: 0.6, Mantle: 0.2, Gnosis: 0.1, Fantom: 0.3, Celo: 0.1, Tron: 1.5,
+  Sui: 0.1, Aptos: 0.1, Near: 0.1, Cosmos: 0.1, Bitcoin: 2, Starknet: 0.3,
+};
+export function gasFor(chain: string): number {
+  return GAS_BY_CHAIN[chain] ?? 1;
+}
+
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+/** A stable per-protocol cadence day, derived from the slug so plans differ row to row. */
+export function cadenceDay(slug: string): string {
+  let h = 0;
+  for (let i = 0; i < slug.length; i++) h = (h * 31 + slug.charCodeAt(i)) >>> 0;
+  return WEEKDAYS[h % 7]!;
+}
+
 function weeklyActionFor(category: string | null): string {
   switch (category) {
     case 'Lending': return 'supply the deposit, borrow a small amount against it and repay inside the week';
@@ -220,19 +243,37 @@ function holdDays(ageDays: number): number {
   return 30;
 }
 
-/** Six concrete steps per protocol, each with its cost and its time. */
-export function farmSteps(p: Protocol, f: Factors): string[] {
+export interface FarmTotals { capital: number; gasTotal: number; weeks: number; hold: number }
+
+/** What a full farm of this protocol costs, summed from the same figures the steps quote. */
+export function farmTotals(p: Protocol, f: Factors): FarmTotals {
   const capital = capitalTier(p.tvl_usd);
-  const chain = p.chains[0] ?? 'its main chain';
-  const weekly = weeklyActionFor(p.category);
+  const gas = gasFor(p.chains[0] ?? '');
   const hold = holdDays(f.ageDays);
+  const weeks = Math.max(4, Math.round(hold / 7));
+  const surfaces = p.chains.length > 1 ? 2 : 1;
+  const gasTotal = Math.round((gas * (2 + weeks + surfaces) + gas) * 100) / 100;
+  return { capital, gasTotal, weeks, hold };
+}
+
+/** Seven concrete steps per protocol, each with its cost and its time. */
+export function farmSteps(p: Protocol, f: Factors): string[] {
+  const t = farmTotals(p, f);
+  const chain = p.chains[0] ?? 'its main chain';
+  const gas = gasFor(chain);
+  const weekly = weeklyActionFor(p.category);
+  const day = cadenceDay(p.slug);
+  const second = p.chains.length > 1
+    ? `Repeat a smaller position on ${p.chains[1]}, its second chain: multi-chain activity is the pattern most launch snapshots reward. Cost: ${money(t.capital / 2)} capital + about ${money(gasFor(p.chains[1]))} gas \u00B7 Time: 20 minutes.`
+    : `Deepen the ${chain} position once, to ${money(t.capital * 1.5)} total, rather than spreading thin across wallets; one real position outranks five dust ones. Cost: ${money(t.capital / 2)} more capital \u00B7 Time: 15 minutes.`;
   return [
     `Set up a fresh wallet for ${p.name} and write the seed phrase down offline; never farm from a wallet that holds savings. Cost: $0 \u00B7 Time: 15 minutes.`,
-    `Move ${money(capital)} to ${chain} and make a first deposit with ${p.name}; a small, real position is what launch snapshots count. Cost: ${money(capital)} capital \u00B7 Time: 1 day to land and confirm.`,
-    `Every week, ${weekly} on ${chain}; steady weeks beat one large deposit for most points programs. Cost: gas only, about $2 a week \u00B7 Time: 10 minutes a week.`,
-    `Hold the position for at least ${hold} days across at least two monthly snapshots; closing early is the most common way a farm earns nothing. Cost: $0 \u00B7 Time: ${hold} days.`,
+    `Move ${money(t.capital)} to ${chain} (gas about ${money(gas)}) and make a first deposit with ${p.name}; a small, real position is what launch snapshots count. Cost: ${money(t.capital)} capital \u00B7 Time: 1 day to land and confirm.`,
+    `Every ${day}, ${weekly} on ${chain}; steady weeks beat one large deposit for most points programs. Cost: about ${money(gas)} gas a week \u00B7 Time: 10 minutes a week, ${t.weeks} weeks.`,
+    second,
+    `Hold the position for at least ${t.hold} days across at least two monthly snapshots; closing early is the most common way a farm earns nothing. Cost: $0 \u00B7 Time: ${t.hold} days.`,
     `Claim only from the link ${p.name} itself publishes, after checking the contract address against its DefiLlama page; never pay anyone to claim for you. Cost: $0 \u00B7 Time: 30 minutes, when announced.`,
-    `Keep a dated farm log (wallet, amounts, tx hashes) and exit in reverse order once the token trades, keeping a little gas on ${chain}. Cost: gas only \u00B7 Time: 1 hour.`,
+    `Keep a dated farm log (wallet, amounts, tx hashes). All-in cost of this plan: ${money(t.capital)} capital plus about ${money(t.gasTotal)} gas; exit in reverse order once the token trades, keeping ${money(gas)} of gas on ${chain}. Time: 1 hour to unwind.`,
   ];
 }
 
@@ -275,14 +316,19 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; radar: Rada
 
   const rows = scored.map((s, i) => {
     const calib = table.find((r) => r.category === s.p.category);
-    const lo = calib === undefined ? Math.max(1, Math.round(s.p.tvl_usd * clamp(globalMedian, 0.02, 1) * s.f.growthMult * s.f.maturity * s.f.breadth)) : Math.max(1, Math.round(s.p.tvl_usd * calib.low_multiple * s.f.growthMult * s.f.maturity * s.f.breadth));
-    const hi = calib === undefined ? Math.max(1, Math.round(s.p.tvl_usd * clamp(globalMedian, MULT_FLOOR, 2) * s.f.growthMult * s.f.maturity * s.f.breadth)) : Math.max(1, Math.round(s.p.tvl_usd * calib.high_multiple * s.f.growthMult * s.f.maturity * s.f.breadth));
+    const loMult = calib === undefined ? clamp(globalMedian, 0.02, 1) : calib.low_multiple;
+    const hiMult = calib === undefined ? clamp(globalMedian, MULT_FLOOR, 2) : calib.high_multiple;
+    const totals = farmTotals(s.p, s.f);
     return {
       slug: s.p.slug, name: s.p.name, category: s.p.category, chains: s.p.chains,
       tvl: s.p.tvl_usd, change7d: s.p.change_7d, ageDays: s.f.ageDays,
-      rank: i + 1, implied: s.implied, lo, hi, multiple: s.multiple,
+      rank: i + 1, implied: s.implied,
+      lo: Math.max(1, Math.round(s.p.tvl_usd * loMult * s.f.growthMult * s.f.maturity * s.f.breadth)),
+      hi: Math.max(1, Math.round(s.p.tvl_usd * hiMult * s.f.growthMult * s.f.maturity * s.f.breadth)),
+      multiple: s.multiple,
       growthMult: round4(s.f.growthMult), maturity: round4(s.f.maturity), breadth: round4(s.f.breadth),
       watchlist: watch.has(s.p.slug), steps: board[i]!.farm_steps,
+      farmCapital: totals.capital, farmGas: totals.gasTotal, farmWeeks: totals.weeks,
     };
   });
 
