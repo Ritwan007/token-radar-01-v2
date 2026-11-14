@@ -122,9 +122,9 @@ export function calibrate(snapshot: Snapshot): { globalMedian: number; table: Ca
       median_ratio: round4(med),
       p25_ratio: round4(p25),
       p75_ratio: round4(p75),
-      multiple: usable ? round4(clamp(shrink(n, med, globalMedian), MULT_FLOOR, MULT_CAP)) : round4(clamp(globalMedian, MULT_FLOOR, MULT_CAP)),
-      low_multiple: usable ? round4(clamp(shrink(n, p25, globalP25), 0.02, MULT_CAP)) : round4(clamp(globalP25, 0.02, MULT_CAP)),
-      high_multiple: usable ? round4(clamp(shrink(n, p75, globalP75), MULT_FLOOR, 2.0)) : round4(clamp(globalP75, MULT_FLOOR, 2.0)),
+      multiple: usable ? clamp(shrink(n, med, globalMedian), MULT_FLOOR, MULT_CAP) : clamp(globalMedian, MULT_FLOOR, MULT_CAP),
+      low_multiple: usable ? clamp(shrink(n, p25, globalP25), 0.02, MULT_CAP) : clamp(globalP25, 0.02, MULT_CAP),
+      high_multiple: usable ? clamp(shrink(n, p75, globalP75), MULT_FLOOR, 2.0) : clamp(globalP75, MULT_FLOOR, 2.0),
       reliability: n >= 8 ? 'firm' : usable ? 'fair' : 'thin',
     });
   }
